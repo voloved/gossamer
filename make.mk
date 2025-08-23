@@ -201,44 +201,58 @@ DEFINES += \
 
 # TIMESET = X
 # if TIMESET is set to one of the following options, it will generate definitions that capture the build date and time:
-#  year = BUILD_YEAR is defined
-#  day = BUILD_YEAR, BUILD_MONTH and BUILD_DAY are defined
-#  minute = BUILD_YEAR, BUILD_MONTH, BUILD_DAY, BUILD_HOUR and BUILD_MINUTE are defined
+#  year = BUILD_YEAR and BUILD_TIMEZONE are defined
+#  day = BUILD_YEAR, BUILD_TIMEZONE, BUILD_MONTH and BUILD_DAY are defined
+#  minute = BUILD_YEAR, BUILD_TIMEZONE, BUILD_MONTH, BUILD_DAY, BUILD_HOUR and BUILD_MINUTE are defined
+
+ifndef TIMESET
+  TIMESET := minute
+endif
+
 ifdef TIMESET
 ifeq ($(DETECTED_OS), WINDOWS)
-CURRENT_YEAR := $(shell powershell -Command "[System.DateTime]::Now.Year - 2020")
-CURRENT_MONTH := $(shell powershell -Command "[System.DateTime]::Now.Month")
-CURRENT_DAY := $(shell powershell -Command "[System.DateTime]::Now.Day")
-CURRENT_HOUR := $(shell powershell -Command "[System.DateTime]::Now.Hour")
-CURRENT_MINUTE := $(shell powershell -Command "[System.DateTime]::Now.Minute")
+TIMEZONE := $(shell powershell -Command "[int](Get-TimeZone).BaseUtcOffset.TotalMinutes")
+CURRENT_YEAR := $(shell powershell -Command "[System.DateTime]::UtcNow.Year - 2020")
+CURRENT_MONTH := $(shell powershell -Command "[System.DateTime]::UtcNow.Month")
+CURRENT_DAY := $(shell powershell -Command "[System.DateTime]::UtcNow.Day")
+CURRENT_HOUR := $(shell powershell -Command "[System.DateTime]::UtcNow.Hour")
+CURRENT_MINUTE := $(shell powershell -Command "[System.DateTime]::UtcNow.Minute")
 else
 # Unix/Linux/macOS
-CURRENT_YEAR := $(shell echo $$(($(shell date +"%Y") - 2020)))
-CURRENT_MONTH := $(shell date +"%-m")
-CURRENT_DAY := $(shell date +"%-d")
-CURRENT_HOUR := $(shell date +"%-H")
-CURRENT_MINUTE := $(shell date +"%-M")
+TIMEZONE := $(shell date +%z | awk '{print substr($$0, 1, 3) * 60 + substr($$0, 4, 2)}')
+CURRENT_YEAR := $(shell echo $$(($(shell date -u +"%Y") - 2020)))
+CURRENT_MONTH := $(shell date -u +"%-m")
+CURRENT_DAY := $(shell date -u +"%-d")
+CURRENT_HOUR := $(shell date -u +"%-H")
+CURRENT_MINUTE := $(shell date -u +"%-M")
 endif
 ifeq ($(TIMESET), year)
+CFLAGS += -DBUILD_TIMEZONE=$(TIMEZONE)
 CFLAGS += -DBUILD_YEAR=$(CURRENT_YEAR)
+$(info Default year is set to $(shell date +"%Y") $(shell date +%Z))
 else ifeq ($(TIMESET), day)
+CFLAGS += -DBUILD_TIMEZONE=$(TIMEZONE)
 CFLAGS += -DBUILD_YEAR=$(CURRENT_YEAR)
 CFLAGS += -DBUILD_MONTH=$(CURRENT_MONTH)
 CFLAGS += -DBUILD_DAY=$(CURRENT_DAY)
+$(info Default date set to $(shell date +"%b") $(CURRENT_DAY) $(shell date +"%Y") $(shell date +%Z))
 else ifeq ($(TIMESET), minute)
+CFLAGS += -DBUILD_TIMEZONE=$(TIMEZONE)
 CFLAGS += -DBUILD_YEAR=$(CURRENT_YEAR)
 CFLAGS += -DBUILD_MONTH=$(CURRENT_MONTH)
 CFLAGS += -DBUILD_DAY=$(CURRENT_DAY)
 CFLAGS += -DBUILD_HOUR=$(CURRENT_HOUR)
 CFLAGS += -DBUILD_MINUTE=$(CURRENT_MINUTE)
+$(info Default time set to $(CURRENT_HOUR):$(shell printf "%02d" $(CURRENT_MINUTE)) on $(shell date +"%b") $(CURRENT_DAY) $(shell date +"%Y") $(shell date +%Z))
 else
 $(error TIMESET must be year, day, or minute if used.)
 endif
 endif
 
+ifeq (,$(filter clean,$(MAKECMDGOALS)))
 GIT_HASH := $(shell git rev-parse --short HEAD | cut -c1-6 || echo 0)
-ifdef GIT_HASH
+ifneq ($(GIT_HASH), 0)
 CFLAGS += -DBUILD_GIT_HASH=\"$(GIT_HASH)\"
-else
-CFLAGS += -DBUILD_GIT_HASH=\"noHash\"
+$(info Git Hash: $(GIT_HASH))
+endif
 endif
