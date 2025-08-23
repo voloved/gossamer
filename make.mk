@@ -199,6 +199,7 @@ endif # End of tinyusb exclusion
 DEFINES += \
   -DDONT_USE_CMSIS_INIT
 
+ifeq (,$(filter clean,$(MAKECMDGOALS)))
 # TIMESET = X
 # if TIMESET is set to one of the following options, it will generate definitions that capture the build date and time:
 #  year = BUILD_YEAR and BUILD_TIMEZONE are defined
@@ -249,7 +250,6 @@ $(error TIMESET must be year, day, or minute if used.)
 endif
 endif
 
-ifeq (,$(filter clean,$(MAKECMDGOALS)))
 GIT_HASH := $(shell git rev-parse --short HEAD | cut -c1-6 || echo 0)
 ifneq ($(GIT_HASH), 0)
 CFLAGS += -DBUILD_GIT_HASH=\"$(GIT_HASH)\"
