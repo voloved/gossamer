@@ -255,4 +255,9 @@ ifneq ($(GIT_HASH), 0)
 CFLAGS += -DBUILD_GIT_HASH=\"$(GIT_HASH)\"
 $(info Git Hash: $(GIT_HASH))
 endif
+
+ifdef SHARE
+  CFLAGS += -DBUILD_TO_SHARE
+  $(info Building to share.)
+endif
 endif
