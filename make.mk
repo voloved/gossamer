@@ -255,7 +255,7 @@ $(error TIMESET must be year, day, or minute if used.)
 endif
 endif
 
-GIT_HASH := $(shell git rev-parse --short HEAD | cut -c1-6 | tr a-f A-F || echo 0)
+GIT_HASH := $(shell git rev-parse --short HEAD | cut -c1-6 | sed 'y/abcef/ABCEF/' || echo 0)
 ifneq ($(GIT_HASH), 0)
 CFLAGS += -DBUILD_GIT_HASH=\"$(GIT_HASH)\"
 $(info Git Hash: $(GIT_HASH))
