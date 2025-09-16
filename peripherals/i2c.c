@@ -109,7 +109,7 @@ i2c_result_t i2c_write_instance(uint8_t sercom, uint8_t address, uint8_t* data, 
 
     /* This can hang forever, so put a timeout on it. */
     size_t w = 0;
-    for (; w < 100000; w++) {
+    for (; w < 10000; w++) {
         if (SERCOM_Peripherals[sercom].sercom->I2CM.INTFLAG.bit.MB) {
             break;
         }
@@ -167,7 +167,7 @@ i2c_result_t i2c_read_instance(uint8_t sercom, uint8_t address, uint8_t* data, s
 
     /* This can hang forever, so put a timeout on it. */
     size_t w = 0;
-    for (; w < 100000; w++) {
+    for (; w < 10000; w++) {
         if (SERCOM->I2CM.INTFLAG.bit.SB) {
             break;
         }
