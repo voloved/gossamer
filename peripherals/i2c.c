@@ -16,7 +16,7 @@
 #define BUSSTATE_IDLE 1
 #define BUSSTATE_OWNER 2
 #define BUSSTATE_BUSY 3
-#define BUS_TIMEOUT 10000
+#define BUS_TIMEOUT 50000
 
 #if defined(I2C_SERCOM)
 
@@ -155,7 +155,6 @@ i2c_result_t i2c_write_instance(uint8_t sercom, uint8_t address, uint8_t* data, 
             return I2C_RESULT_ERR_BUSERR;
         }
     }
-
     return I2C_RESULT_SUCCESS;
 }
 
