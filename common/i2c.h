@@ -27,6 +27,7 @@ typedef enum {
     I2C_RESULT_ERR_BUSSTATE = -2,
     I2C_RESULT_ERR_BUSERR = -3,
     I2C_RESULT_ERR_DATA_NACK = -4,
+    I2C_RESULT_ERR_TIMEOUT = -5,
 } i2c_result_t;
 
 /**

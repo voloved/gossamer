@@ -17,6 +17,17 @@
 #define BUSSTATE_OWNER 2
 #define BUSSTATE_BUSY 3
 
+#define I2C_TIMEOUT_START_MAX 100000u
+#define I2C_TIMEOUT_LOOP_MAX  300000u
+
+static inline i2c_result_t _i2c_fail_with_stop(Sercom* SERCOM, i2c_result_t err) {
+    SERCOM->I2CM.CTRLB.bit.CMD = 3;
+    while (SERCOM->I2CM.SYNCBUSY.bit.SYSOP) {
+        // Wait for stop
+    }
+    return err;
+}
+
 #if defined(I2C_SERCOM)
 
 void i2c_init(void) {
@@ -109,7 +120,7 @@ i2c_result_t i2c_write_instance(uint8_t sercom, uint8_t address, uint8_t* data, 
 
     /* This can hang forever, so put a timeout on it. */
     size_t w = 0;
-    for (; w < 100000; w++) {
+    for (; w < I2C_TIMEOUT_START_MAX; w++) {
         if (SERCOM_Peripherals[sercom].sercom->I2CM.INTFLAG.bit.MB) {
             break;
         }
@@ -122,23 +133,30 @@ i2c_result_t i2c_write_instance(uint8_t sercom, uint8_t address, uint8_t* data, 
     if (SERCOM_Peripherals[sercom].sercom->I2CM.STATUS.bit.RXNACK) {
         return I2C_RESULT_ERR_ADDR_NACK;
     }
+    if (w >= I2C_TIMEOUT_LOOP_MAX) {
+        return _i2c_fail_with_stop(SERCOM_Peripherals[sercom].sercom, I2C_RESULT_ERR_TIMEOUT);
+    }
 
     /* Send data bytes. */
     for (size_t i = 0; i < len; i++) {
         /* Send data and wait for TX complete. */
         SERCOM_Peripherals[sercom].sercom->I2CM.DATA.bit.DATA = data[i];
 
+        w = 0;
         while (!SERCOM_Peripherals[sercom].sercom->I2CM.INTFLAG.bit.MB) {
             /* Check for loss of arbitration or a bus error. We can't continue if those happen. */
             /* BUSERR is set in addition to ARBLOST if arbitration is lost, so just check that one. */
             if (SERCOM_Peripherals[sercom].sercom->I2CM.STATUS.bit.BUSERR) {
-                return I2C_RESULT_ERR_BUSERR;
+                return _i2c_fail_with_stop(SERCOM_Peripherals[sercom].sercom, I2C_RESULT_ERR_BUSERR);
+            }
+            if (++w >= I2C_TIMEOUT_LOOP_MAX) {
+                return _i2c_fail_with_stop(SERCOM_Peripherals[sercom].sercom, I2C_RESULT_ERR_TIMEOUT);
             }
         }
 
         /* If a nack is received we can not continue sending data. */
         if (SERCOM_Peripherals[sercom].sercom->I2CM.STATUS.bit.RXNACK) {
-            return I2C_RESULT_ERR_DATA_NACK;
+            return _i2c_fail_with_stop(SERCOM_Peripherals[sercom].sercom, I2C_RESULT_ERR_DATA_NACK);
         }
     }
 
@@ -167,7 +185,7 @@ i2c_result_t i2c_read_instance(uint8_t sercom, uint8_t address, uint8_t* data, s
 
     /* This can hang forever, so put a timeout on it. */
     size_t w = 0;
-    for (; w < 100000; w++) {
+    for (; w < I2C_TIMEOUT_START_MAX; w++) {
         if (SERCOM->I2CM.INTFLAG.bit.SB) {
             break;
         }
@@ -180,12 +198,23 @@ i2c_result_t i2c_read_instance(uint8_t sercom, uint8_t address, uint8_t* data, s
     if (SERCOM->I2CM.STATUS.bit.RXNACK) {
         return I2C_RESULT_ERR_ADDR_NACK;
     }
+    if (w >= I2C_TIMEOUT_LOOP_MAX) {
+        return _i2c_fail_with_stop(SERCOM, I2C_RESULT_ERR_TIMEOUT);
+    }
 
     /* Receive data bytes. */
     for (size_t i = 0; i < len; i++) {
         /* Receive data and wait for RX complete. */
         data[i] = SERCOM->I2CM.DATA.bit.DATA;
-        while (!SERCOM->I2CM.INTFLAG.bit.SB);
+        w = 0;
+        while (!SERCOM->I2CM.INTFLAG.bit.SB) {
+            if (SERCOM->I2CM.STATUS.bit.BUSERR) {
+                return _i2c_fail_with_stop(SERCOM, I2C_RESULT_ERR_BUSERR);
+            }
+            if (++w >= I2C_TIMEOUT_LOOP_MAX) {
+                return _i2c_fail_with_stop(SERCOM, I2C_RESULT_ERR_TIMEOUT);
+            }
+        }
     }
 
     /* Send STOP command, NACK */
