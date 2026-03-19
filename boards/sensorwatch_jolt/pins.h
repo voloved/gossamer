@@ -12,15 +12,6 @@ HAL_GPIO_PIN(A2,   B, 2)
 HAL_GPIO_PIN(A3,   B, 3)
 HAL_GPIO_PIN(A4,   B, 0)
 
-// SPI
-HAL_GPIO_PIN(MISO, B, 0)
-HAL_GPIO_PIN(SCK,  B, 1)
-HAL_GPIO_PIN(MOSI, B, 2)
-HAL_GPIO_PIN(CS,   B, 3)
-#define SPI_SERCOM 3
-#define SPI_SERCOM_DOPO SPI_DOPO_0_SCK_3
-#define SPI_SERCOM_DIPO SPI_DIPO_2
-
 // I2C
 HAL_GPIO_PIN(SDA,  B, 30)
 HAL_GPIO_PIN(SCL,  B, 31)
@@ -35,6 +26,12 @@ HAL_GPIO_PIN(RED,   B, 22)  // Actually is a white LED, but I'd rather piggybick
 HAL_GPIO_PIN(LED,   B, 22)  // Default to red LED for blinky tests
 #define WATCH_INVERT_LED_POLARITY
 #define WATCH_RED_TCC_CHANNEL 2
+
+// IR Sensor
+#define HAS_IR_SENSOR
+HAL_GPIO_PIN(IR_ENABLE, B, 2)
+HAL_GPIO_PIN(IRSENSE, B, 1)
+
 // Sound
 HAL_GPIO_PIN(BUZZER,  A, 27)
 #define WATCH_BUZZER_TCC_CHANNEL 5
