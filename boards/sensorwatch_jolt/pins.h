@@ -6,11 +6,10 @@
 HAL_GPIO_PIN(VBUS_DET, B, 5)
 
 // Analog pins
-HAL_GPIO_PIN(A0,   B, 4)
 HAL_GPIO_PIN(A1,   B, 1)
 HAL_GPIO_PIN(A2,   B, 2)
-HAL_GPIO_PIN(A3,   B, 3)
-HAL_GPIO_PIN(A4,   B, 0)
+HAL_GPIO_PIN(A4,   B, 3)  // This should be A3, but it seems that the accelerometer daughterboard schematic has these flipped.
+HAL_GPIO_PIN(A3,   B, 0)
 
 // I2C
 HAL_GPIO_PIN(SDA,  B, 30)
@@ -24,23 +23,16 @@ HAL_GPIO_PIN(TEMPSENSE, A, 3)
 // Light
 HAL_GPIO_PIN(RED,   B, 22)  // Actually is a white LED, but I'd rather piggybick on all of the Red LED logic for now.
 HAL_GPIO_PIN(LED,   B, 22)  // Default to red LED for blinky tests
-#define WATCH_INVERT_LED_POLARITY
 #define WATCH_RED_TCC_CHANNEL 2
-
-// IR Sensor
-#define HAS_IR_SENSOR
-HAL_GPIO_PIN(IR_ENABLE, B, 2)
-HAL_GPIO_PIN(IRSENSE, B, 1)
-
 // Sound
 HAL_GPIO_PIN(BUZZER,  A, 27)
 #define WATCH_BUZZER_TCC_CHANNEL 5
 #define WATCH_BUZZER_IS_BOOSTED
 
 // Buttons
-HAL_GPIO_PIN(BTN_LIGHT, A, 30)  // Is actually ADJUST, but we want a similar UX to the F91W
+HAL_GPIO_PIN(BTN_LIGHT, A,  2)  // Is actually ADJUST, but we want a similar UX to the F91W
 HAL_GPIO_PIN(BTN_MODE,  A, 31)
-HAL_GPIO_PIN(BTN_ALARM, A,  2)  // Is actually LIGHT, but we want a similar UX to the F91W
+HAL_GPIO_PIN(BTN_ALARM, A, 30)  // Is actually LIGHT, but we want a similar UX to the F91W
 HAL_GPIO_PIN(BTN_START, B,  4)
 
 // Segment LCD
@@ -81,6 +73,7 @@ HAL_GPIO_PIN(SLCD30, A, 22)  // SEG 26
     (uint64_t)1 <<  1 | \
     (uint64_t)1 <<  2 | \
     (uint64_t)1 <<  3 | \
+    (uint64_t)1 <<  4 | \
     (uint64_t)1 <<  5 | \
     (uint64_t)1 <<  6 | \
     (uint64_t)1 <<  7 | \
@@ -103,7 +96,6 @@ HAL_GPIO_PIN(SLCD30, A, 22)  // SEG 26
     (uint64_t)1 << 43 | \
     (uint64_t)1 << 48 | \
     (uint64_t)1 << 49 | \
-    (uint64_t)1 << 51 | \
     (uint64_t)1 << 51 | \
     (uint64_t)1 << 28 | \
     (uint64_t)1 << 29 | \
