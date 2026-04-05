@@ -20,20 +20,27 @@ HAL_GPIO_PIN(SCL,  B, 31)
 HAL_GPIO_PIN(TS_ENABLE, B, 23)
 HAL_GPIO_PIN(TEMPSENSE, A, 3)
 
+// IR Sensor
+#define HAS_IR_SENSOR
+HAL_GPIO_PIN(IR_ENABLE, B, 2)
+HAL_GPIO_PIN(IRSENSE, B, 1)
+
 // Light
 HAL_GPIO_PIN(RED,   B, 22)  // Actually is a white LED, but I'd rather piggybick on all of the Red LED logic for now.
 HAL_GPIO_PIN(LED,   B, 22)  // Default to red LED for blinky tests
+#define WATCH_INVERT_LED_POLARITY
 #define WATCH_RED_TCC_CHANNEL 2
+
 // Sound
 HAL_GPIO_PIN(BUZZER,  A, 27)
 #define WATCH_BUZZER_TCC_CHANNEL 5
 #define WATCH_BUZZER_IS_BOOSTED
 
 // Buttons
-HAL_GPIO_PIN(BTN_LIGHT, A,  2)  // Is actually ADJUST, but we want a similar UX to the F91W
+HAL_GPIO_PIN(BTN_START, A,  2)  // Is actually ADJUST, but we want a similar UX to the F91W
 HAL_GPIO_PIN(BTN_MODE,  A, 31)
 HAL_GPIO_PIN(BTN_ALARM, A, 30)  // Is actually LIGHT, but we want a similar UX to the F91W
-HAL_GPIO_PIN(BTN_START, B,  4)
+HAL_GPIO_PIN(BTN_LIGHT, B,  4)
 
 // Segment LCD
 HAL_GPIO_PIN(SLCD0,  B,  6)  // COM  0
