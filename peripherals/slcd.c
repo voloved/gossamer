@@ -31,7 +31,7 @@ static void _slcd_sync(uint32_t reg) {
     while (SLCD->SYNCBUSY.reg & reg);
 }
 
-void slcd_init(uint64_t lcd_pins, slcd_bias_value_t bias, slcd_duty_value_t duty, slcd_clocksource_value_t clocksource, slcd_prescaler_value_t prescaler, slcd_clockdiv_value_t clkdiv) {
+void slcd_init(uint64_t lcd_pins, slcd_bias_value_t bias, slcd_duty_value_t duty, slcd_clocksource_value_t clocksource, slcd_prescaler_value_t prescaler, slcd_clockdiv_value_t clkdiv, slcd_xvlcd_value_t use_xvlcd) {
     // select the correct clock for the SLCD peripheral
     OSC32KCTRL->SLCDCTRL.bit.SLCDSEL = clocksource & 1;
 
@@ -53,6 +53,7 @@ void slcd_init(uint64_t lcd_pins, slcd_bias_value_t bias, slcd_duty_value_t duty
                       SLCD_CTRLA_WMOD_LP |          // low power waveform
                       SLCD_CTRLA_BIAS(bias) |       // User defined bias
                       SLCD_CTRLA_DUTY(duty) |       // User defined duty cycle
+                      SLCD_CTRLA_XVLCD(use_xvlcd) | // Use external voltage for LCD
                       SLCD_CTRLA_PRESC(prescaler) | // User defined prescaler
                       SLCD_CTRLA_CKDIV(clkdiv) |    // User defined clock divider
                       SLCD_CTRLA_PRF(3) |           // power refresh slowly, 250 Hz

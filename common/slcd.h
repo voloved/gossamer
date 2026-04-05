@@ -82,6 +82,11 @@ typedef enum {
     SLCD_CSRSHIFT_RIGHT = 1,
 } slcd_csrshift_value_t;
 
+typedef enum {
+    SLCD_XVLCD_INTERNAL = 0,
+    SLCD_XVLCD_EXTERNAL = 1,
+} slcd_xvlcd_value_t;
+
 /**
  * @brief Initializes the SLCD peripheral, but does not enable it.
  * @details This function sets up the SLCD peripheral with some defaults:
@@ -126,7 +131,7 @@ typedef enum {
  *                  * SLCD_CTRLA_PRESC_PRESC64_Val - Divide by 64
  *                  * SLCD_CTRLA_PRESC_PRESC128_Val - Divide by 128
  * @param clock_divider The clock divider, which divides the prescaled clock.
- *                      Valid options areL
+ *                      Valid options are:
  *                      * SLCD_CLOCKDIV_1 for no division
  *                      * SLCD_CLOCKDIV_2 to divide by 2
  *                      * SLCD_CLOCKDIV_3 to divide by 3
@@ -135,8 +140,12 @@ typedef enum {
  *                      * SLCD_CLOCKDIV_6 to divide by 6
  *                      * SLCD_CLOCKDIV_7 to divide by 7
  *                      * SLCD_CLOCKDIV_8 to divide by 8
+ * @param use_xvlcd Configures how VLCD is generated.
+ *                      Valid options areL
+ *                      * SLCD_XVLCD_INTERNAL for using the internal VLCD
+ *                      * SLCD_XVLCD_EXTERNAL for using the external VLCD
  */
-void slcd_init(uint64_t lcd_pins, slcd_bias_value_t bias, slcd_duty_value_t duty, slcd_clocksource_value_t clocksource, slcd_prescaler_value_t prescaler, slcd_clockdiv_value_t clkdiv);
+void slcd_init(uint64_t lcd_pins, slcd_bias_value_t bias, slcd_duty_value_t duty, slcd_clocksource_value_t clocksource, slcd_prescaler_value_t prescaler, slcd_clockdiv_value_t clkdiv, slcd_xvlcd_value_t use_xvlcd);
 
 /**
  * @brief Sets the contrast level for the display. Valid values are from 0-15.

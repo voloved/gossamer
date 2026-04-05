@@ -135,7 +135,8 @@ typedef union {
 #define SLCD_CTRLA_BIAS_THIRD       (SLCD_CTRLA_BIAS_THIRD_Val     << SLCD_CTRLA_BIAS_Pos)
 #define SLCD_CTRLA_BIAS_FOURTH      (SLCD_CTRLA_BIAS_FOURTH_Val    << SLCD_CTRLA_BIAS_Pos)
 #define SLCD_CTRLA_XVLCD_Pos        19           /**< \brief (SLCD_CTRLA) External VLCD */
-#define SLCD_CTRLA_XVLCD            (0x1ul << SLCD_CTRLA_XVLCD_Pos)
+#define SLCD_CTRLA_XVLCD_Msk        (0x1ul << SLCD_CTRLA_XVLCD_Pos)
+#define SLCD_CTRLA_XVLCD(value)     (SLCD_CTRLA_XVLCD_Msk & ((value) << SLCD_CTRLA_XVLCD_Pos))
 #define SLCD_CTRLA_PRF_Pos          20           /**< \brief (SLCD_CTRLA) Power Refresh Frequency */
 #define SLCD_CTRLA_PRF_Msk          (0x3ul << SLCD_CTRLA_PRF_Pos)
 #define SLCD_CTRLA_PRF(value)       (SLCD_CTRLA_PRF_Msk & ((value) << SLCD_CTRLA_PRF_Pos))

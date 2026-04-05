@@ -29,7 +29,7 @@
 static void _slcd_sync(uint32_t reg) {
 }
 
-void slcd_init(uint64_t lcd_pins, slcd_bias_value_t bias, slcd_duty_value_t duty, slcd_clocksource_value_t clocksource, slcd_prescaler_value_t prescaler, slcd_clockdiv_value_t clkdiv) {
+void slcd_init(uint64_t lcd_pins, slcd_bias_value_t bias, slcd_duty_value_t duty, slcd_clocksource_value_t clocksource, slcd_prescaler_value_t prescaler, slcd_clockdiv_value_t clkdiv, slcd_xvlcd_value_t use_xvlcd) {
 }
 
 void slcd_set_contrast(uint8_t contrast) {
