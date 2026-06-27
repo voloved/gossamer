@@ -206,13 +206,12 @@ ifeq (,$(filter clean,$(MAKECMDGOALS)))
 #  day = BUILD_YEAR, BUILD_TIMEZONE, BUILD_MONTH and BUILD_DAY are defined
 #  minute = BUILD_YEAR, BUILD_TIMEZONE, BUILD_MONTH, BUILD_DAY, BUILD_HOUR and BUILD_MINUTE are defined
 
-ifdef SHARE
+SHARE ?= TRUE
+ifeq ($(SHARE),TRUE)
   CFLAGS += -DBUILD_TO_SHARE
   $(info Building to Share.)
 else
-ifndef TIMESET
-  TIMESET := minute
-endif
+  TIMESET ?= minute
 endif
 
 ifdef TIMESET
