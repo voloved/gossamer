@@ -207,11 +207,15 @@ ifeq (,$(filter clean,$(MAKECMDGOALS)))
 #  minute = BUILD_YEAR, BUILD_TIMEZONE, BUILD_MONTH, BUILD_DAY, BUILD_HOUR and BUILD_MINUTE are defined
 
 SHARE ?= true
-ifeq (,$(filter false FALSE 0,$(SHARE)))
+ifneq (,$(filter true TRUE 1,$(SHARE)))
   override SHARE := true
   CFLAGS += -DBUILD_TO_SHARE
   $(info Building to Share.)
+else ifneq (,$(filter false FALSE 0,$(SHARE)))
+  override SHARE := false
+  TIMESET ?= minute
 else
+  $(info Unknown SHARE type used. Setting to SHARE=false.)
   override SHARE := false
   TIMESET ?= minute
 endif
