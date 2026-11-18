@@ -40,6 +40,7 @@
 #ifndef _SAMD51_
 
 static volatile uint32_t _channelMask = 0; // Bitmask of allocated channels
+static bool _dmaInitialized;
 
 // DMA descriptor list entry point (and writeback buffer) per channel
 __attribute__((__aligned__(16))) static DmacDescriptor ///< 128 bit alignment
@@ -86,6 +87,12 @@ static void cpu_irq_leave_critical(void) {
 
 
 void dma_init(void) {
+    cpu_irq_enter_critical();
+    if (_dmaInitialized) {
+        cpu_irq_leave_critical();
+        return;
+    }
+
 #if defined(_SAMD21_) || defined(_SAMD11_)
     PM->AHBMASK.bit.DMAC_ = 1;
     PM->APBBMASK.bit.DMAC_ = 1;
@@ -94,6 +101,7 @@ void dma_init(void) {
 #endif
     DMAC->CTRL.bit.DMAENABLE = 0;
     DMAC->CTRL.bit.SWRST = 1;
+    while (DMAC->CTRL.bit.SWRST);
 
     // Initialize descriptor list addresses
     DMAC->BASEADDR.bit.BASEADDR = (uint32_t)_descriptor;
@@ -107,16 +115,23 @@ void dma_init(void) {
     // Enable DMA interrupt at lowest priority
     NVIC_EnableIRQ(DMAC_IRQn);
     NVIC_SetPriority(DMAC_IRQn, (1 << __NVIC_PRIO_BITS) - 1);
+    _dmaInitialized = true;
+    cpu_irq_leave_critical();
 }
 
 bool dma_configure(gossamer_dma_job_t *dmaJob, uint8_t peripheralTrigger, dma_trigger_action_t triggerAction, dma_configuration_flags_t flags) {
+    if (!dmaJob) return false;
+
+    cpu_irq_enter_critical();
+
     uint8_t channel;
     for (channel = 0; (channel < DMAC_CH_NUM) && (_channelMask & (1 << channel)); channel++) {
         // do nothing, just find the first available channel
     }
-    if (channel >= DMAC_CH_NUM) return false;
-
-    cpu_irq_enter_critical();
+    if (channel >= DMAC_CH_NUM) {
+        cpu_irq_leave_critical();
+        return false;
+    }
 
     _channelMask |= 1 << channel;   // Mark channel as allocated
     _dmaPtr[channel] = dmaJob;   // Channel-index-to-object pointer
@@ -125,6 +140,7 @@ bool dma_configure(gossamer_dma_job_t *dmaJob, uint8_t peripheralTrigger, dma_tr
     DMAC->CHID.bit.ID = channel;
     DMAC->CHCTRLA.bit.ENABLE = 0;
     DMAC->CHCTRLA.bit.SWRST = 1;
+    while (DMAC->CHCTRLA.bit.SWRST);
 
     // Clear software trigger
     DMAC->SWTRIGCTRL.reg &= ~(1 << channel);
@@ -145,20 +161,23 @@ bool dma_configure(gossamer_dma_job_t *dmaJob, uint8_t peripheralTrigger, dma_tr
     dmaJob->jobStatus = DMA_STATUS_OK;
     dmaJob->hasDescriptors = false; // No descriptors allocated yet
     dmaJob->loopFlag = !!(flags & DMA_CONFIG_LOOP);
+    dmaJob->descriptor = NULL;
     memset(dmaJob->callbacks, 0, sizeof(dmaJob->callbacks));
 
     return true;
 }
 
-DmacDescriptor *dma_add_descriptor(gossamer_dma_job_t *dmaJob, void *src, void *dst, uint32_t count, dma_beat_size_t size, dma_address_increment_t addressIncrement, dma_stepsize_t stepSize, dma_stepsel_t stepSel) {
-    if (dmaJob->channel >= DMAC_CH_NUM)
+DmacDescriptor *dma_add_descriptor(gossamer_dma_job_t *dmaJob, void *src, void *dst, uint32_t count, dma_beat_size_t size, dma_address_increment_t addressIncrement, dma_stepsize_t stepSize, dma_stepsel_t stepSel, dma_block_action_t blockAction) {
+    if (!dmaJob || dmaJob->channel >= DMAC_CH_NUM || _dmaPtr[dmaJob->channel] != dmaJob)
         return NULL;
 
     // Can't do while job's busy
-    if (dmaJob->jobStatus == DMA_STATUS_BUSY)
+    if (dmaJob->jobStatus == DMA_STATUS_BUSY || !src || !dst || count == 0)
         return NULL;
 
-    DmacDescriptor *desc;
+    DmacDescriptor *desc = (DmacDescriptor *)memalign(16, sizeof(DmacDescriptor));
+    if (!desc) return NULL;
+    memset(desc, 0, sizeof(*desc));
 
     // Scan descriptor list to find last entry.  If an entry's
     // DESCADDR value is 0, that's the end of the list and it's
@@ -167,22 +186,15 @@ DmacDescriptor *dma_add_descriptor(gossamer_dma_job_t *dmaJob, void *src, void *
     // looped.  Either way, set the last entry's DESCADDR value
     // to the new descriptor, and the descriptor's own DESCADDR
     // will be set later either to 0 or the list head.
-    if (dmaJob->hasDescriptors) {
-        // DMA descriptors must be 128-bit (16 byte) aligned.
-        // memalign() is considered 'obsolete' but it's replacements
-        // (aligned_alloc() or posix_memalign()) are not currently
-        // available in the version of ARM GCC in use, but this is,
-        // so here we are.
-        if (!(desc = (DmacDescriptor *)memalign(16, sizeof(DmacDescriptor))))
-            return NULL;
-        DmacDescriptor *prev = &_descriptor[dmaJob->channel];
+    if (dmaJob->descriptor) {
+        DmacDescriptor *prev = dmaJob->descriptor;
         while (prev->DESCADDR.reg && (prev->DESCADDR.reg != (uint32_t)&_descriptor[dmaJob->channel])) {
             prev = (DmacDescriptor *)prev->DESCADDR.reg;
         }
         prev->DESCADDR.reg = (uint32_t)desc;
     }
     else {
-        desc = &_descriptor[dmaJob->channel];
+        dmaJob->descriptor = desc;
     }
     dmaJob->hasDescriptors = true;
 
@@ -201,7 +213,7 @@ DmacDescriptor *dma_add_descriptor(gossamer_dma_job_t *dmaJob, void *src, void *
 
     desc->BTCTRL.bit.VALID = true;
     desc->BTCTRL.bit.EVOSEL = DMA_EVENT_OUTPUT_DISABLE;
-    desc->BTCTRL.bit.BLOCKACT = DMA_BLOCK_ACTION_NONE;
+    desc->BTCTRL.bit.BLOCKACT = blockAction;
     desc->BTCTRL.bit.BEATSIZE = size;
     desc->BTCTRL.bit.SRCINC = !!(addressIncrement & DMA_INCREMENT_SOURCE);
     desc->BTCTRL.bit.DSTINC = !!(addressIncrement & DMA_INCREMENT_DESTINATION);
@@ -235,15 +247,17 @@ DmacDescriptor *dma_add_descriptor(gossamer_dma_job_t *dmaJob, void *src, void *
 }
 
 bool dma_start_job(gossamer_dma_job_t *dmaJob) {
+    if (!dmaJob) return false;
     bool status = true;
 
     cpu_irq_enter_critical(); // Job status is volatile
 
     if (dmaJob->jobStatus == DMA_STATUS_BUSY) {
         status = false; // Resource is busy
-    } else if (dmaJob->channel >= DMAC_CH_NUM) {
+    } else if (dmaJob->channel >= DMAC_CH_NUM || _dmaPtr[dmaJob->channel] != dmaJob) {
         status = false; // Channel not in use
-    } else if (!dmaJob->hasDescriptors || (_descriptor[dmaJob->channel].BTCNT.reg <= 0)) {
+    } else if (!dmaJob->descriptor || !dmaJob->hasDescriptors ||
+               (dmaJob->descriptor->BTCNT.reg == 0)) {
         status = false; // Bad transfer size
     } else {
         uint8_t i, interruptMask = 0;
@@ -254,6 +268,8 @@ bool dma_start_job(gossamer_dma_job_t *dmaJob) {
         DMAC->CHID.bit.ID = dmaJob->channel;
         DMAC->CHINTENSET.reg = DMAC_CHINTENSET_MASK & interruptMask;
         DMAC->CHINTENCLR.reg = DMAC_CHINTENCLR_MASK & ~interruptMask;
+        memcpy(&_descriptor[dmaJob->channel], dmaJob->descriptor, sizeof(DmacDescriptor));
+        __DMB();
         DMAC->CHCTRLA.bit.ENABLE = 1; // Enable the transfer channel
     }
 
@@ -298,4 +314,127 @@ void DMAC_Handler(void) {
     cpu_irq_leave_critical();
 }
 
+
+/**
+ * \brief Add a DMA transfer descriptor to a DMA resource.
+ *
+ * This function will add a DMA transfer descriptor to a DMA resource.
+ * If there was a transfer descriptor already allocated to the DMA resource,
+ * the descriptor will be linked to the next descriptor address.
+ *
+ * \param[in] resource Pointer to the DMA resource
+ * \param[in] descriptor Pointer to the transfer descriptor
+ *
+ * \retval STATUS_OK The descriptor is added to the DMA resource
+ * \retval STATUS_BUSY The DMA resource was busy and the descriptor is not added
+ */
+enum status_code dma_add_descriptor(struct dma_resource *resource,
+		DmacDescriptor* descriptor)
+{
+	DmacDescriptor* desc = resource->descriptor;
+
+	if (resource->job_status == STATUS_BUSY) {
+		return STATUS_BUSY;
+	}
+
+	/* Look up for an empty space for the descriptor */
+	if (desc == NULL) {
+		resource->descriptor = descriptor;
+	} else {
+		/* Looking for end of descriptor link */
+		while(desc->DESCADDR.reg != 0) {
+			desc = (DmacDescriptor*)(desc->DESCADDR.reg);
+		}
+
+		/* Set to the end of descriptor list */
+		desc->DESCADDR.reg = (uint32_t)descriptor;
+	}
+
+	return STATUS_OK;
+}
+
+/**
+ * \brief Start a DMA transfer.
+ *
+ * This function will start a DMA transfer through an allocated DMA resource.
+ *
+ * \param[in,out] resource Pointer to the DMA resource
+ *
+ * \return Status of the transfer start procedure.
+ *
+ * \retval STATUS_OK The transfer was started successfully
+ * \retval STATUS_BUSY The DMA resource was busy and the transfer was not started
+ * \retval STATUS_ERR_INVALID_ARG Transfer size is 0 and transfer was not started
+ */
+enum status_code dma_start_transfer_job(struct dma_resource *resource)
+{
+	Assert(resource);
+	Assert(resource->channel_id != DMA_INVALID_CHANNEL);
+
+	system_interrupt_enter_critical_section();
+
+	/* Check if resource was busy */
+	if (resource->job_status == STATUS_BUSY) {
+		system_interrupt_leave_critical_section();
+		return STATUS_BUSY;
+	}
+
+	/* Check if transfer size is valid */
+	if (resource->descriptor->BTCNT.reg == 0) {
+		system_interrupt_leave_critical_section();
+		return STATUS_ERR_INVALID_ARG;
+	}
+
+	/* Enable DMA interrupt */
+	system_interrupt_enable(SYSTEM_INTERRUPT_MODULE_DMA);
+
+	/* Set the interrupt flag */
+	DMAC->CHID.reg = DMAC_CHID_ID(resource->channel_id);
+	DMAC->CHINTENSET.reg = (DMAC_CHINTENSET_MASK & g_chan_interrupt_flag[resource->channel_id]);
+	/* Set job status */
+	resource->job_status = STATUS_BUSY;
+
+	/* Set channel x descriptor 0 to the descriptor base address */
+	memcpy(&descriptor_section[resource->channel_id], resource->descriptor,
+						sizeof(DmacDescriptor));
+
+	/* Enable the transfer channel */
+	DMAC->CHCTRLA.reg |= DMAC_CHCTRLA_ENABLE;
+
+	system_interrupt_leave_critical_section();
+
+	return STATUS_OK;
+}
+
+/**
+ * \brief Create a DMA transfer descriptor with configurations.
+ *
+ * This function will set the transfer configurations to the DMA transfer
+ * descriptor.
+ *
+ * \param[in] descriptor Pointer to the DMA transfer descriptor
+ * \param[in] config Pointer to the descriptor configuration structure
+ *
+ */
+void dma_descriptor_create(DmacDescriptor* descriptor,
+	struct dma_descriptor_config *config)
+{
+	/* Set block transfer control */
+	descriptor->BTCTRL.bit.VALID = config->descriptor_valid;
+	descriptor->BTCTRL.bit.EVOSEL = config->event_output_selection;
+	descriptor->BTCTRL.bit.BLOCKACT = config->block_action;
+	descriptor->BTCTRL.bit.BEATSIZE = config->beat_size;
+	descriptor->BTCTRL.bit.SRCINC = config->src_increment_enable;
+	descriptor->BTCTRL.bit.DSTINC = config->dst_increment_enable;
+	descriptor->BTCTRL.bit.STEPSEL = config->step_selection;
+	descriptor->BTCTRL.bit.STEPSIZE = config->step_size;
+
+	/* Set transfer size, source address and destination address */
+	descriptor->BTCNT.reg = config->block_transfer_count;
+	descriptor->SRCADDR.reg = config->source_address;
+	descriptor->DSTADDR.reg = config->destination_address;
+
+	/* Set next transfer descriptor address */
+	descriptor->DESCADDR.reg = config->next_descriptor_address;
+}
 #endif

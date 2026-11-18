@@ -181,4 +181,55 @@ void slcd_disable(void) {
     _slcd_sync(SLCD_SYNCBUSY_ENABLE);
 }
 
+/**
+ * \brief Disables automated character display
+ *
+ *  Disables automated character display.
+ */
+void slcd_disable_automated_character(void)
+{
+	SLCD->CTRLC.reg &= ~SLCD_CTRLC_ACMEN;
+}
+
+/**
+ * \name Automated Bit Mapping Functions
+ * @{
+ */
+
+/**
+ * \brief Enables automated bit display
+ *
+ *  Enables automated bit display.
+ */
+void slcd_enable_automated_bit(void)
+{
+	SLCD->CTRLC.reg |= SLCD_CTRLC_ABMEN;
+}
+
+/**
+ * \brief Disables automated bit display
+ *
+ *  Disables automated bit display.
+ */
+void slcd_disable_automated_bit(void)
+{
+	SLCD->CTRLC.reg &= ~SLCD_CTRLC_ABMEN;
+}
+
+/**
+ * \brief Sets automated bit display
+ *
+ *  Sets automated bit display.
+ *
+ *  \note Automated bit cannot be set while it is enabled or busy.
+ */
+void slcd_set_automated_bit(uint8_t size,enum slcd_frame_counter fc)
+{
+	if(size > 0 && size < 0x3f) {
+		SLCD->ABMCFG.reg = SLCD_ABMCFG_SIZE(size) | SLCD_ABMCFG_FCS(fc);
+	}
+}
+
+/** @} */
+
 #endif // SLCD

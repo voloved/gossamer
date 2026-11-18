@@ -258,7 +258,29 @@ void slcd_set_circular_shift_animation_enabled(bool enabled);
  */
 void slcd_disable(void);
 
+/**
+ * \brief SLCD frame counter definition
+ *
+ * Enum SLCD frame counter definition.
+ */
+enum slcd_frame_counter {
+	/** SLCD frame counter 0 */
+	SLCD_FRAME_COUNTER_0,
+	/** SLCD frame counter 1 */
+	SLCD_FRAME_COUNTER_1,
+	/** SLCD frame counter 2 */
+	SLCD_FRAME_COUNTER_2,
+};
 
+/**
+ * \brief Disables automated character display
+ *
+ *  Disables automated character display.
+ */
+void slcd_disable_automated_character(void);
+void slcd_enable_automated_bit(void);
+void slcd_disable_automated_bit(void);
+void slcd_set_automated_bit(uint8_t size,enum slcd_frame_counter fc);
 #endif // SLCD
 
 /** @} */
