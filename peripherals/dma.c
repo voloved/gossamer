@@ -400,13 +400,13 @@ enum status_code dma_start_transfer_job(struct dma_resource *resource)
 
 	/* Check if resource was busy */
 	if (resource->job_status == STATUS_BUSY) {
-		cpu_irq_enter_critical();
+		cpu_irq_leave_critical();
 		return STATUS_BUSY;
 	}
 
 	/* Check if transfer size is valid */
 	if (resource->descriptor->BTCNT.reg == 0) {
-		cpu_irq_enter_critical();
+		cpu_irq_leave_critical();
 		return STATUS_ERR_INVALID_ARG;
 	}
 
@@ -633,6 +633,7 @@ enum status_code dma_allocate(struct dma_resource *resource,
 		/* Perform a software reset before enable DMA controller */
 		DMAC->CTRL.reg &= ~DMAC_CTRL_DMAENABLE;
 		DMAC->CTRL.reg = DMAC_CTRL_SWRST;
+		while (DMAC->CTRL.bit.SWRST);
 
 		/* Setup descriptor base address and write back section base
 		 * address */
@@ -662,6 +663,8 @@ enum status_code dma_allocate(struct dma_resource *resource,
 	DMAC->CHID.reg = DMAC_CHID_ID(resource->channel_id);
 	DMAC->CHCTRLA.reg &= ~DMAC_CHCTRLA_ENABLE;
 	DMAC->CHCTRLA.reg = DMAC_CHCTRLA_SWRST;
+
+	while (DMAC->CHCTRLA.bit.SWRST);
 
 	if(config->run_in_standby){
 		DMAC->CHCTRLA.reg |= DMAC_CHCTRLA_RUNSTDBY;
