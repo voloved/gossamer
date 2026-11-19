@@ -109,12 +109,64 @@ bool dma_configure(gossamer_dma_job_t *dmaJob, uint8_t peripheralTrigger, dma_tr
  * @param blockAction The action to perform when this descriptor's block transfer completes.
  * 
 */
-DmacDescriptor *dma_add_descriptor(gossamer_dma_job_t *dmaJob, void *src, void *dst, uint32_t count, dma_beat_size_t size, dma_address_increment_t addressIncrement, dma_stepsize_t stepSize, dma_stepsel_t stepSel, dma_block_action_t blockAction);
+DmacDescriptor *dma_add_descriptor_goss(gossamer_dma_job_t *dmaJob, void *src, void *dst, uint32_t count, dma_beat_size_t size, dma_address_increment_t addressIncrement, dma_stepsize_t stepSize, dma_stepsel_t stepSel, dma_block_action_t blockAction);
 
 bool dma_start_job(gossamer_dma_job_t *dmaJob);
 
 #endif
 
+/** Mask to retrieve the error category of a status code. */
+#define STATUS_CATEGORY_MASK  0xF0
+
+/** Mask to retrieve the error code within the category of a status code. */
+#define STATUS_ERROR_MASK     0x0F
+
+/** Status code error categories. */
+enum status_categories {
+	STATUS_CATEGORY_OK                = 0x00,
+	STATUS_CATEGORY_COMMON            = 0x10,
+	STATUS_CATEGORY_ANALOG            = 0x30,
+	STATUS_CATEGORY_COM               = 0x40,
+	STATUS_CATEGORY_IO                = 0x50,
+};
+enum status_code {
+	STATUS_OK                         = STATUS_CATEGORY_OK     | 0x00,
+	STATUS_VALID_DATA                 = STATUS_CATEGORY_OK     | 0x01,
+	STATUS_NO_CHANGE                  = STATUS_CATEGORY_OK     | 0x02,
+	STATUS_ABORTED                    = STATUS_CATEGORY_OK     | 0x04,
+	STATUS_BUSY                       = STATUS_CATEGORY_OK     | 0x05,
+	STATUS_SUSPEND                    = STATUS_CATEGORY_OK     | 0x06,
+
+	STATUS_ERR_IO                     = STATUS_CATEGORY_COMMON | 0x00,
+	STATUS_ERR_REQ_FLUSHED            = STATUS_CATEGORY_COMMON | 0x01,
+	STATUS_ERR_TIMEOUT                = STATUS_CATEGORY_COMMON | 0x02,
+	STATUS_ERR_BAD_DATA               = STATUS_CATEGORY_COMMON | 0x03,
+	STATUS_ERR_NOT_FOUND              = STATUS_CATEGORY_COMMON | 0x04,
+	STATUS_ERR_UNSUPPORTED_DEV        = STATUS_CATEGORY_COMMON | 0x05,
+	STATUS_ERR_NO_MEMORY              = STATUS_CATEGORY_COMMON | 0x06,
+	STATUS_ERR_INVALID_ARG            = STATUS_CATEGORY_COMMON | 0x07,
+	STATUS_ERR_BAD_ADDRESS            = STATUS_CATEGORY_COMMON | 0x08,
+	STATUS_ERR_BAD_FORMAT             = STATUS_CATEGORY_COMMON | 0x0A,
+	STATUS_ERR_BAD_FRQ                = STATUS_CATEGORY_COMMON | 0x0B,
+	STATUS_ERR_DENIED                 = STATUS_CATEGORY_COMMON | 0x0c,
+	STATUS_ERR_ALREADY_INITIALIZED    = STATUS_CATEGORY_COMMON | 0x0d,
+	STATUS_ERR_OVERFLOW               = STATUS_CATEGORY_COMMON | 0x0e,
+	STATUS_ERR_NOT_INITIALIZED        = STATUS_CATEGORY_COMMON | 0x0f,
+
+	STATUS_ERR_SAMPLERATE_UNAVAILABLE = STATUS_CATEGORY_ANALOG | 0x00,
+	STATUS_ERR_RESOLUTION_UNAVAILABLE = STATUS_CATEGORY_ANALOG | 0x01,
+
+	STATUS_ERR_BAUDRATE_UNAVAILABLE   = STATUS_CATEGORY_COM    | 0x00,
+	STATUS_ERR_PACKET_COLLISION       = STATUS_CATEGORY_COM    | 0x01,
+	STATUS_ERR_PROTOCOL               = STATUS_CATEGORY_COM    | 0x02,
+
+	STATUS_ERR_PIN_MUX_INVALID        = STATUS_CATEGORY_IO     | 0x00,
+};
+
+#define DMA_INVALID_CHANNEL        0xff
+
+/* DMA channel interrup flag. */
+extern uint8_t g_chan_interrupt_flag[DMAC_CH_NUM];
 
 /** DMA priority level. */
 enum dma_priority_level {
@@ -181,22 +233,6 @@ enum dma_step_selection {
 	DMA_STEPSEL_SRC,
 };
 
-/**
- * Block action definitions.
- */
-
-/** Event output selection. */
-enum dma_event_output_selection {
-	/** Event generation disable. */
-	DMA_EVENT_OUTPUT_DISABLE = 0,
-	/** Event strobe when block transfer complete. */
-	DMA_EVENT_OUTPUT_BLOCK,
-	/** Event output reserved. */
-	DMA_EVENT_OUTPUT_RESERVED,
-	/** Event strobe when beat transfer complete. */
-	DMA_EVENT_OUTPUT_BEAT,
-};
-
 /** Configurations for DMA events. */
 struct dma_events_config {
 	/** Event input actions */
@@ -212,7 +248,7 @@ struct dma_resource_config {
 	/**DMA peripheral trigger index */
 	uint8_t peripheral_trigger;
 	/** DMA trigger action */
-	enum dma_trigger_action_t trigger_action;
+	dma_trigger_action_t trigger_action;
 	/** Keep DMA channel enabled in standby sleep mode if true */
 	bool run_in_standby;
 	/** DMA events configurations */
@@ -252,11 +288,11 @@ struct dma_descriptor_config {
 	bool descriptor_valid;
 	/** This is used to generate an event on specific transfer action in
 	    a channel. Supported only in four lower channels. */
-	enum dma_event_output_selection event_output_selection;
+	dma_event_output_selection_t event_output_selection;
 	/** Action taken when a block transfer is completed */
-	enum dma_block_action_t block_action;
+	dma_block_action_t block_action;
 	/** Beat size is configurable as 8-bit, 16-bit, or 32-bit */
-	enum dma_beat_size_t beat_size;
+	dma_beat_size_t beat_size;
 	/** Used for enabling the source address increment */
 	bool src_increment_enable;
 	/** Used for enabling the destination address increment */
@@ -282,14 +318,16 @@ struct dma_descriptor_config {
 
 static inline void dma_descriptor_get_config_defaults(struct dma_descriptor_config *config)
 {
-	Assert(config);
+    if (config == NULL) {
+        return;
+    }
 
 	/* Set descriptor as valid */
 	config->descriptor_valid = true;
 	/* Disable event output */
 	config->event_output_selection = DMA_EVENT_OUTPUT_DISABLE;
 	/* No block action */
-	config->block_action = DMA_BLOCK_ACTION_NOACT;
+	config->block_action = DMA_BLOCK_ACTION_NONE;
 	/* Set beat size to one byte */
 	config->beat_size = DMA_BEAT_SIZE_BYTE;
 	/* Enable source increment */
@@ -310,6 +348,9 @@ static inline void dma_descriptor_get_config_defaults(struct dma_descriptor_conf
 	config->next_descriptor_address = 0;
 }
 
+void dma_get_config_defaults(struct dma_resource_config *config);
+enum status_code dma_allocate(struct dma_resource *resource,
+		struct dma_resource_config *config);
 
 enum status_code dma_start_transfer_job(struct dma_resource *resource);
 void dma_descriptor_create(DmacDescriptor* descriptor,

@@ -42,6 +42,31 @@
 static volatile uint32_t _channelMask = 0; // Bitmask of allocated channels
 static bool _dmaInitialized;
 
+
+struct _dma_module {
+	volatile bool _dma_init;
+	volatile uint32_t allocated_channels;
+	uint8_t free_channels;
+};
+
+struct _dma_module _dma_inst = {
+	._dma_init = false,
+	.allocated_channels = 0,
+	.free_channels = DMAC_CH_NUM,
+};
+
+/**
+ * \brief Set aligned boundary.
+ */
+#if (defined __GNUC__) || (defined __CC_ARM)
+#   define COMPILER_ALIGNED(a)        __attribute__((__aligned__(a)))
+#elif (defined __ICCARM__)
+#   define COMPILER_ALIGNED(a)        COMPILER_PRAGMA(data_alignment = a)
+#endif
+
+COMPILER_ALIGNED(16)
+DmacDescriptor descriptor_section[DMAC_CH_NUM] SECTION_DMAC_DESCRIPTOR;
+
 // DMA descriptor list entry point (and writeback buffer) per channel
 __attribute__((__aligned__(16))) static DmacDescriptor ///< 128 bit alignment
     _descriptor[DMAC_CH_NUM] SECTION_DMAC_DESCRIPTOR,  ///< Descriptor table
@@ -167,7 +192,7 @@ bool dma_configure(gossamer_dma_job_t *dmaJob, uint8_t peripheralTrigger, dma_tr
     return true;
 }
 
-DmacDescriptor *dma_add_descriptor(gossamer_dma_job_t *dmaJob, void *src, void *dst, uint32_t count, dma_beat_size_t size, dma_address_increment_t addressIncrement, dma_stepsize_t stepSize, dma_stepsel_t stepSel, dma_block_action_t blockAction) {
+DmacDescriptor *dma_add_descriptor_goss(gossamer_dma_job_t *dmaJob, void *src, void *dst, uint32_t count, dma_beat_size_t size, dma_address_increment_t addressIncrement, dma_stepsize_t stepSize, dma_stepsel_t stepSel, dma_block_action_t blockAction) {
     if (!dmaJob || dmaJob->channel >= DMAC_CH_NUM || _dmaPtr[dmaJob->channel] != dmaJob)
         return NULL;
 
@@ -368,25 +393,25 @@ enum status_code dma_add_descriptor(struct dma_resource *resource,
  */
 enum status_code dma_start_transfer_job(struct dma_resource *resource)
 {
-	Assert(resource);
-	Assert(resource->channel_id != DMA_INVALID_CHANNEL);
+	if (resource == NULL) return STATUS_ERR_INVALID_ARG;
+	if(resource->channel_id == DMA_INVALID_CHANNEL) return STATUS_ERR_INVALID_ARG;
 
-	system_interrupt_enter_critical_section();
+	cpu_irq_enter_critical();
 
 	/* Check if resource was busy */
 	if (resource->job_status == STATUS_BUSY) {
-		system_interrupt_leave_critical_section();
+		cpu_irq_enter_critical();
 		return STATUS_BUSY;
 	}
 
 	/* Check if transfer size is valid */
 	if (resource->descriptor->BTCNT.reg == 0) {
-		system_interrupt_leave_critical_section();
+		cpu_irq_enter_critical();
 		return STATUS_ERR_INVALID_ARG;
 	}
 
 	/* Enable DMA interrupt */
-	system_interrupt_enable(SYSTEM_INTERRUPT_MODULE_DMA);
+	NVIC_EnableIRQ(DMAC_IRQn);
 
 	/* Set the interrupt flag */
 	DMAC->CHID.reg = DMAC_CHID_ID(resource->channel_id);
@@ -401,7 +426,7 @@ enum status_code dma_start_transfer_job(struct dma_resource *resource)
 	/* Enable the transfer channel */
 	DMAC->CHCTRLA.reg |= DMAC_CHCTRLA_ENABLE;
 
-	system_interrupt_leave_critical_section();
+	cpu_irq_enter_critical();
 
 	return STATUS_OK;
 }
@@ -436,5 +461,222 @@ void dma_descriptor_create(DmacDescriptor* descriptor,
 
 	/* Set next transfer descriptor address */
 	descriptor->DESCADDR.reg = config->next_descriptor_address;
+}
+
+
+/**
+ * \brief Initializes config with predefined default values.
+ *
+ * This function will initialize a given DMA configuration structure to
+ * a set of known default values. This function should be called on
+ * any new instance of the configuration structure before being
+ * modified by the user application.
+ *
+ * The default configuration is as follows:
+ *  \li Software trigger is used as the transfer trigger
+ *  \li Priority level 0
+ *  \li Only software/event trigger
+ *  \li Requires a trigger for each transaction
+ *  \li No event input /output
+ *  \li DMA channel is disabled during sleep mode (if has the feature)
+ * \param[out] config Pointer to the configuration
+ *
+ */
+void dma_get_config_defaults(struct dma_resource_config *config)
+{
+	if(config == NULL) return;
+	/* Set as priority 0 */
+	config->priority = DMA_PRIORITY_LEVEL_0;
+	/* Only software/event trigger */
+	config->peripheral_trigger = 0;
+	/* Transaction trigger */
+	config->trigger_action = DMA_TRIGGER_ACTION_TRANSACTION;
+
+	/* Event configurations, no event input/output */
+	config->event_config.input_action = DMA_EVENT_INPUT_NOACT;
+	config->event_config.event_output_enable = false;
+	config->run_in_standby = false;
+}
+
+COMPILER_ALIGNED(16)
+DmacDescriptor descriptor_section[DMAC_CH_NUM] SECTION_DMAC_DESCRIPTOR;
+
+/** Initial write back memory section. */
+COMPILER_ALIGNED(16)
+static DmacDescriptor _write_back_section[DMAC_CH_NUM] SECTION_DMAC_DESCRIPTOR;
+
+/** Internal DMA resource pool. */
+static struct dma_resource* _dma_active_resource[DMAC_CH_NUM];
+
+/* DMA channel interrup flag. */
+uint8_t g_chan_interrupt_flag[DMAC_CH_NUM]={0};
+
+/**
+ * \brief Find a free channel for a DMA resource.
+ *
+ * Find a channel for the requested DMA resource.
+ *
+ * \return Status of channel allocation.
+ * \retval DMA_INVALID_CHANNEL  No channel available
+ * \retval count          Allocated channel for the DMA resource
+ */
+static uint8_t _dma_find_first_free_channel_and_allocate(void)
+{
+	uint8_t count;
+	uint32_t tmp;
+	bool allocated = false;
+
+	cpu_irq_enter_critical();
+
+	tmp = _dma_inst.allocated_channels;
+
+	for (count = 0; count < DMAC_CH_NUM; ++count) {
+		if (!(tmp & 0x00000001)) {
+			/* If free channel found, set as allocated and return
+			 *number */
+
+			_dma_inst.allocated_channels |= 1 << count;
+			_dma_inst.free_channels--;
+			allocated = true;
+
+			break;
+		}
+
+		tmp = tmp >> 1;
+	}
+
+	cpu_irq_leave_critical();
+
+	if (!allocated) {
+		return DMA_INVALID_CHANNEL;
+	} else {
+		return count;
+	}
+}
+
+
+/**
+ * \brief Configure the DMA resource.
+ *
+ * \param[in]  dma_resource Pointer to a DMA resource instance
+ * \param[out] resource_config Configurations of the DMA resource
+ *
+ */
+static void _dma_set_config(struct dma_resource *resource,
+		struct dma_resource_config *resource_config)
+{
+	if(resource == NULL) return;
+	if(resource_config == NULL) return;
+	uint32_t temp_CHCTRLB_reg;
+	cpu_irq_enter_critical();
+
+	/** Select the DMA channel and clear software trigger */
+	DMAC->CHID.reg = DMAC_CHID_ID(resource->channel_id);
+	DMAC->SWTRIGCTRL.reg &= (uint32_t)(~(1 << resource->channel_id));
+
+	temp_CHCTRLB_reg = DMAC_CHCTRLB_LVL(resource_config->priority) | \
+			DMAC_CHCTRLB_TRIGSRC(resource_config->peripheral_trigger) | \
+			DMAC_CHCTRLB_TRIGACT(resource_config->trigger_action);
+
+
+	if(resource_config->event_config.input_action){
+	temp_CHCTRLB_reg |= DMAC_CHCTRLB_EVIE | DMAC_CHCTRLB_EVACT(
+				resource_config->event_config.input_action);
+	}
+
+	/** Enable event output, the event output selection is configured in
+	 * each transfer descriptor  */
+	if (resource_config->event_config.event_output_enable) {
+		temp_CHCTRLB_reg |= DMAC_CHCTRLB_EVOE;
+	}
+
+	/* Write config to CTRLB register */
+	DMAC->CHCTRLB.reg = temp_CHCTRLB_reg;
+
+
+
+	cpu_irq_leave_critical();
+}
+
+/**
+ * \brief Allocate a DMA with configurations.
+ *
+ * This function will allocate a proper channel for a DMA transfer request.
+ *
+ * \param[in,out]  dma_resource Pointer to a DMA resource instance
+ * \param[in] transfer_config Configurations of the DMA transfer
+ *
+ * \return Status of the allocation procedure.
+ *
+ * \retval STATUS_OK The DMA resource was allocated successfully
+ * \retval STATUS_ERR_NOT_FOUND DMA resource allocation failed
+ */
+enum status_code dma_allocate(struct dma_resource *resource,
+		struct dma_resource_config *config)
+{
+	uint8_t new_channel;
+
+	if(resource == NULL) return STATUS_ERR_INVALID_ARG;
+
+	cpu_irq_enter_critical();
+
+	if (!_dma_inst._dma_init) {
+		/* Initialize clocks for DMA */
+#if defined(_SAML21_) || defined(_SAML22_)
+        MCLK->AHBMASK.reg |= MCLK_AHBMASK_DMAC;
+#else
+		system_ahb_clock_set_mask(PM_AHBMASK_DMAC);
+		system_apb_clock_set_mask(SYSTEM_CLOCK_APB_APBB,
+				PM_APBBMASK_DMAC);
+#endif
+
+		/* Perform a software reset before enable DMA controller */
+		DMAC->CTRL.reg &= ~DMAC_CTRL_DMAENABLE;
+		DMAC->CTRL.reg = DMAC_CTRL_SWRST;
+
+		/* Setup descriptor base address and write back section base
+		 * address */
+		DMAC->BASEADDR.reg = (uint32_t)descriptor_section;
+		DMAC->WRBADDR.reg = (uint32_t)_write_back_section;
+
+		/* Enable all priority level at the same time */
+		DMAC->CTRL.reg = DMAC_CTRL_DMAENABLE | DMAC_CTRL_LVLEN(0xf);
+
+		_dma_inst._dma_init = true;
+	}
+
+	/* Find the proper channel */
+	new_channel = _dma_find_first_free_channel_and_allocate();
+
+	/* If no channel available, return not found */
+	if (new_channel == DMA_INVALID_CHANNEL) {
+		cpu_irq_leave_critical();
+
+		return STATUS_ERR_NOT_FOUND;
+	}
+
+	/* Set the channel */
+	resource->channel_id = new_channel;
+
+	/** Perform a reset for the allocated channel */
+	DMAC->CHID.reg = DMAC_CHID_ID(resource->channel_id);
+	DMAC->CHCTRLA.reg &= ~DMAC_CHCTRLA_ENABLE;
+	DMAC->CHCTRLA.reg = DMAC_CHCTRLA_SWRST;
+
+	if(config->run_in_standby){
+		DMAC->CHCTRLA.reg |= DMAC_CHCTRLA_RUNSTDBY;
+	}
+
+	/** Configure the DMA control,channel registers and descriptors here */
+	_dma_set_config(resource, config);
+
+	resource->descriptor = NULL;
+
+	/* Log the DMA resource into the internal DMA resource pool */
+	_dma_active_resource[resource->channel_id] = resource;
+
+	cpu_irq_leave_critical();
+
+	return STATUS_OK;
 }
 #endif
