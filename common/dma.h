@@ -163,6 +163,11 @@ enum status_code {
 	STATUS_ERR_PIN_MUX_INVALID        = STATUS_CATEGORY_IO     | 0x00,
 };
 
+
+#if defined(_SAML21_) || defined(_SAML22_)
+#define FEATURE_DMA_CHANNEL_STANDBY
+#endif
+
 #define DMA_INVALID_CHANNEL        0xff
 
 /* DMA channel interrup flag. */
@@ -249,8 +254,10 @@ struct dma_resource_config {
 	uint8_t peripheral_trigger;
 	/** DMA trigger action */
 	dma_trigger_action_t trigger_action;
+#ifdef FEATURE_DMA_CHANNEL_STANDBY
 	/** Keep DMA channel enabled in standby sleep mode if true */
 	bool run_in_standby;
+#endif
 	/** DMA events configurations */
 	struct dma_events_config event_config;
 };

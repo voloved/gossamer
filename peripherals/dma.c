@@ -427,6 +427,7 @@ enum status_code dma_start_transfer_job(struct dma_resource *resource)
 	DMAC->CHCTRLA.reg |= DMAC_CHCTRLA_ENABLE;
 
 	cpu_irq_leave_critical();
+    // Commenting out this global interrupt disable seems to have ABM work...at 350uA
 
 	return STATUS_OK;
 }
@@ -495,7 +496,9 @@ void dma_get_config_defaults(struct dma_resource_config *config)
 	/* Event configurations, no event input/output */
 	config->event_config.input_action = DMA_EVENT_INPUT_NOACT;
 	config->event_config.event_output_enable = false;
+#ifdef FEATURE_DMA_CHANNEL_STANDBY
 	config->run_in_standby = false;
+#endif
 }
 
 COMPILER_ALIGNED(16)
@@ -633,7 +636,6 @@ enum status_code dma_allocate(struct dma_resource *resource,
 		/* Perform a software reset before enable DMA controller */
 		DMAC->CTRL.reg &= ~DMAC_CTRL_DMAENABLE;
 		DMAC->CTRL.reg = DMAC_CTRL_SWRST;
-		while (DMAC->CTRL.bit.SWRST);
 
 		/* Setup descriptor base address and write back section base
 		 * address */
@@ -666,9 +668,11 @@ enum status_code dma_allocate(struct dma_resource *resource,
 
 	while (DMAC->CHCTRLA.bit.SWRST);
 
+#ifdef FEATURE_DMA_CHANNEL_STANDBY
 	if(config->run_in_standby){
 		DMAC->CHCTRLA.reg |= DMAC_CHCTRLA_RUNSTDBY;
 	}
+#endif
 
 	/** Configure the DMA control,channel registers and descriptors here */
 	_dma_set_config(resource, config);
